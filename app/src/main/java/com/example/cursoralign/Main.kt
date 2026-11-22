@@ -51,9 +51,6 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
-import com.google.mlkit.vision.objects.DetectedObject
-import com.google.mlkit.vision.objects.ObjectDetection
-import com.google.mlkit.vision.objects.ObjectDetectorOptions
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Core
@@ -166,13 +163,6 @@ class DetectionEngine(private val context: Context) {
         .build()
     private val faceDetector = FaceDetection.getClient(faceOptions)
 
-    private val objectDetector = ObjectDetection.getClient(
-        ObjectDetectorOptions.Builder()
-            .setDetectorMode(ObjectDetectorOptions.SINGLE_IMAGE_MODE)
-            .enableMultipleObjects()
-            .enableClassification()
-            .build())
-
     fun stats(): String = "T:" + targetTemplates.size + " B:" + bodyTemplates.size + " TR:" + triggerTemplates.size
 
     fun ensureLoaded() { if (loaded) return; loadTemplates(); loaded = true }
@@ -283,10 +273,6 @@ class DetectionEngine(private val context: Context) {
             heads.addAll(detectFaces(smallRgba, scale, screenW, screenH))
         }
 
-        val mlBodies = detectPersons(smallRgba, scale, screenW, screenH)
-        bodies.addAll(mlBodies)
-        for (b in mlBodies) heads.add(headBoxFromBody(b))
-
         if (frameIndex % Config.TEMPLATE_EVERY_N_FRAMES == 0) {
             val r = detectTemplateTargets(gray, scale, screenW, screenH)
             lastTemplateHeads = r.first
@@ -331,44 +317,6 @@ class DetectionEngine(private val context: Context) {
                             (b.right / scale).toInt().coerceIn(0, screenW),
                             (b.bottom / scale).toInt().coerceIn(0, screenH),
                             0.95, "face"))
-                    }
-                }
-            }
-            smallBmp.recycle()
-            out
-        } catch (_: Exception) { emptyList() }
-    }
-
-    private fun detectPersons(smallRgba: Mat, scale: Double, screenW: Int, screenH: Int): List<Box> {
-        return try {
-            val smallBmp = Bitmap.createBitmap(smallRgba.cols(), smallRgba.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(smallRgba, smallBmp)
-            val image = InputImage.fromBitmap(smallBmp, 0)
-            val latch = CountDownLatch(1)
-            var result: List<DetectedObject>? = null
-            objectDetector.process(image)
-                .addOnSuccessListener { result = it; latch.countDown() }
-                .addOnFailureListener { latch.countDown() }
-            latch.await(400, TimeUnit.MILLISECONDS)
-            val out = mutableListOf<Box>()
-            val rl = result
-            if (rl != null) {
-                for (o in rl) {
-                    var person = false
-                    for (c in o.categories) {
-                        val label = c.label ?: ""
-                        if (label.contains("Person", true)) person = true
-                    }
-                    if (person) {
-                        val b = o.boundingBox
-                        if (b.width() >= Config.FACE_MIN_BOX && b.height() >= Config.FACE_MIN_BOX) {
-                            out.add(Box(
-                                (b.left / scale).toInt().coerceIn(0, screenW),
-                                (b.top / scale).toInt().coerceIn(0, screenH),
-                                (b.right / scale).toInt().coerceIn(0, screenW),
-                                (b.bottom / scale).toInt().coerceIn(0, screenH),
-                                0.80, "ml-person"))
-                        }
                     }
                 }
             }
