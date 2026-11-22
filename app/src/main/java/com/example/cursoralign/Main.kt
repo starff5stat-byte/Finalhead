@@ -580,8 +580,6 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(req: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(req, perms, res)
-        Shizuku.onRequestPermissionResult(req, res)
-        if (req == SHIZUKU_REQ && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) startAll()
         if (req == NOTIF_REQ && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) startAll()
     }
 }
