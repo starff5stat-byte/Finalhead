@@ -545,8 +545,11 @@ class MainActivity : Activity() {
             startActivityForResult(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")), OVERLAY_REQ)
             return
         }
-        if (!Shizuku.pingBinder()) { Toast.makeText(this, "Shizuku start karo", Toast.LENGTH_LONG).show(); return }
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) { Shizuku.requestPermission(SHIZUKU_REQ); return }
+        if (AutoSwipeService.instance == null) {
+            Toast.makeText(this, "Accessibility settings me 'Cursor Align' service ON karo, phir wapas aakar Start dabao", Toast.LENGTH_LONG).show()
+            try { startActivityForResult(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), 1005) } catch (_: Exception) { }
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), NOTIF_REQ)
             return
