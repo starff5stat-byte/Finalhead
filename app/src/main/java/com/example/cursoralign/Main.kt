@@ -53,7 +53,6 @@ import org.opencv.core.Core
 import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
-import rikka.shizuku.Shizuku
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
