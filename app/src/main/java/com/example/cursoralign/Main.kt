@@ -343,29 +343,6 @@ class DetectionEngine(private val context: Context) {
         } catch (_: Exception) { emptyList() }
     }
 
-    private fun detectFaces(smallRgba: Mat, scale: Double, screenW: Int, screenH: Int): List<Box> {
-        return try {
-            val smallBmp = Bitmap.createBitmap(smallRgba.cols(), smallRgba.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(smallRgba, smallBmp)
-            val image = InputImage.fromBitmap(smallBmp, 0)
-            val faces = Tasks.await(faceDetector.process(image), 400, TimeUnit.MILLISECONDS)
-            val out = mutableListOf<Box>()
-            for (f in faces) {
-                val b = f.boundingBox
-                if (b.width() >= Config.FACE_MIN_BOX && b.height() >= Config.FACE_MIN_BOX) {
-                    out.add(Box(
-                        (b.left / scale).toInt().coerceIn(0, screenW),
-                        (b.top / scale).toInt().coerceIn(0, screenH),
-                        (b.right / scale).toInt().coerceIn(0, screenW),
-                        (b.bottom / scale).toInt().coerceIn(0, screenH),
-                        0.95, "face"))
-                }
-            }
-            smallBmp.recycle()
-            out
-        } catch (_: Exception) { emptyList() }
-    }
-
     private fun detectTemplateTargets(gray: Mat, scale: Double, screenW: Int, screenH: Int): Pair<List<Box>, List<Box>> {
         val heads = mutableListOf<Box>()
         val bodies = mutableListOf<Box>()
@@ -517,12 +494,13 @@ class DetectionEngine(private val context: Context) {
 }
 class OverlayView(context: Context) : View(context) {
 
-    private val boxPaint = Paint().apply { color = Color.GREEN; style = Paint.Style.STROKE; strokeWidth = 4f }
-    private val bodyPaint = Paint().apply { color = Color.CYAN; style = Paint.Style.STROKE; strokeWidth = 3f }
-    private val targetPaint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 6f }
-    private val linePaint = Paint().apply { color = Color.YELLOW; style = Paint.Style.STROKE; strokeWidth = 5f }
+    private val bodyFill = Paint().apply { color = Color.RED; alpha = 80; style = Paint.Style.FILL }
+    private val bodyStroke = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 3f }
+    private val headStroke = Paint().apply { color = Color.YELLOW; style = Paint.Style.STROKE; strokeWidth = 3f }
+    private val selStroke = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 6f }
+    private val linePaint = Paint().apply { color = Color.YELLOW; style = Paint.Style.STROKE; strokeWidth = 3f }
     private val crossPaint = Paint().apply { color = Color.YELLOW; style = Paint.Style.STROKE; strokeWidth = 4f }
-    private val textPaint = Paint().apply { color = Color.WHITE; textSize = 38f; setShadowLayer(8f, 0f, 0f, Color.BLACK) }
+    private val textPaint = Paint().apply { color = Color.WHITE; textSize = 34f; setShadowLayer(8f, 0f, 0f, Color.BLACK) }
 
     @Volatile private var boxes: List<Box> = emptyList()
     @Volatile private var bodies: List<Box> = emptyList()
@@ -544,18 +522,22 @@ class OverlayView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
+        val originX = width / 2f
+        val originY = 0f
+
         for (b in bodies) {
-            canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), bodyPaint)
+            canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), bodyFill)
+            canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), bodyStroke)
+            canvas.drawLine(originX, originY, b.cx.toFloat(), b.cy.toFloat(), linePaint)
         }
 
         for (b in boxes) {
-            canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), boxPaint)
+            canvas.drawRect(b.left.toFloat(), b.top.toFloat(), b.right.toFloat(), b.bottom.toFloat(), headStroke)
+            canvas.drawLine(originX, originY, b.cx.toFloat(), b.cy.toFloat(), linePaint)
         }
 
         target?.let { t ->
-            canvas.drawRect(t.left.toFloat(), t.top.toFloat(), t.right.toFloat(), t.bottom.toFloat(), targetPaint)
-            canvas.drawLine(cursorX.toFloat(), cursorY.toFloat(), t.cx.toFloat(), t.cy.toFloat(), linePaint)
-            canvas.drawCircle(t.cx.toFloat(), t.cy.toFloat(), 14f, targetPaint)
+            canvas.drawRect(t.left.toFloat(), t.top.toFloat(), t.right.toFloat(), t.bottom.toFloat(), selStroke)
         }
 
         canvas.drawLine(cursorX - 30f, cursorY.toFloat(), cursorX + 30f, cursorY.toFloat(), crossPaint)
@@ -563,7 +545,6 @@ class OverlayView(context: Context) : View(context) {
         canvas.drawText(status, 24f, 60f, textPaint)
     }
 }
-
 class MainActivity : Activity() {
 
     companion object {
@@ -678,14 +659,55 @@ class FloatingService : Service() {
         closeBtn.gravity = Gravity.CENTER
         closeBtn.setBackgroundColor(Color.RED)
         closeBtn.setOnClickListener { stopSelf(); Process.killProcess(Process.myPid()) }
-        iv.setOnClickListener { iconView?.visibility = View.GONE; menuView?.visibility = View.VISIBLE }
-        iconFrame.addView(iv, FrameLayout.LayoutParams(150, 150))
-        iconFrame.addView(closeBtn, FrameLayout.LayoutParams(60, 60, Gravity.TOP or Gravity.END))
-        val p = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT)
-        p.gravity = Gravity.TOP or Gravity.START
-        p.x = 50
-        p.y = 200
-        wm.addView(iconFrame, p)
+        iconFrame.addView(iv, FrameLayout.LayoutParams(75, 75))
+        iconFrame.addView(closeBtn, FrameLayout.LayoutParams(30, 30, Gravity.TOP or Gravity.END))
+
+        val iconP = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT, overlayType, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT)
+        iconP.gravity = Gravity.TOP or Gravity.START
+        iconP.x = 50
+        iconP.y = 200
+
+        iconFrame.setOnTouchListener(object : View.OnTouchListener {
+            private var downX = 0f
+            private var downY = 0f
+            private var baseX = 0
+            private var baseY = 0
+            private var dragged = false
+
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX
+                        downY = event.rawY
+                        baseX = iconP.x
+                        baseY = iconP.y
+                        dragged = false
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - downX
+                        val dy = event.rawY - downY
+                        if (abs(dx) > 15 || abs(dy) > 15) dragged = true
+                        if (dragged) {
+                            iconP.x = (baseX + dx.toInt()).coerceIn(0, (AppState.screenW - 100).coerceAtLeast(0))
+                            iconP.y = (baseY + dy.toInt()).coerceIn(0, (AppState.screenH - 100).coerceAtLeast(0))
+                            try { wm.updateViewLayout(iconFrame, iconP) } catch (_: Exception) { }
+                        }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!dragged) {
+                            iconView?.visibility = View.GONE
+                            showMenuNear(iconP.x, iconP.y)
+                        }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
+
+        wm.addView(iconFrame, iconP)
         iconView = iconFrame
 
         val menu = LinearLayout(this)
@@ -736,6 +758,15 @@ class FloatingService : Service() {
         }
     }
 
+    private fun showMenuNear(x: Int, y: Int) {
+        try {
+            menuParams.x = x.coerceIn(0, (AppState.screenW - 620).coerceAtLeast(0))
+            menuParams.y = (y + 90).coerceIn(0, (AppState.screenH - 220).coerceAtLeast(0))
+            wm.updateViewLayout(menuView, menuParams)
+        } catch (_: Exception) { }
+        menuView?.visibility = View.VISIBLE
+    }
+ 
     private fun loadIcon(iv: ImageView) {
         val jpg = try { BitmapFactory.decodeStream(assets.open("floating_icon.jpg")) } catch (_: Exception) { null }
         if (jpg != null) { iv.setImageBitmap(jpg); return }
@@ -815,6 +846,14 @@ class ScreenCaptureService : Service() {
 
     private fun loop() {
         if (!AppState.screenCaptureServiceRunning) return
+
+        if (!AppState.enabled) {
+            AppState.overlayView?.update(emptyList(), emptyList(), null, AppState.cursorX, AppState.cursorY,
+                "EN:OFF " + (engine?.stats() ?: "") + " SW:" + (if (AutoSwipeService.instance != null) "OK" else "NO"))
+            h.postDelayed({ loop() }, 300)
+            return
+        }
+
         val img = ir?.acquireLatestImage()
         if (img != null) {
             val bmp = imageToBitmap(img)
@@ -829,16 +868,17 @@ class ScreenCaptureService : Service() {
         }
         h.postDelayed({ loop() }, 120)
     }
-
     private fun handleResult(res: FrameResult) {
         AppState.triggerActive = res.triggerActive
         AppState.targetPoint = res.selected?.let { Point(it.cx, it.cy) }
 
-        val status = "EN:" + (if (AppState.enabled) "ON" else "OFF") +
+        val status = "EN:ON" +
                 " TRIG:" + (if (res.triggerActive) "YES" else "NO") +
                 " HEAD:" + res.candidates.size +
                 " BODY:" + res.bodies.size +
-                (res.selected?.let { " CONF:" + String.format("%.2f", it.conf) } ?: "")
+                (res.selected?.let { " CONF:" + String.format("%.2f", it.conf) } ?: "") +
+                " " + (engine?.stats() ?: "") +
+                " SW:" + (if (AutoSwipeService.instance != null) "OK" else "NO")
 
         AppState.overlayView?.update(res.candidates, res.bodies, res.selected, AppState.cursorX, AppState.cursorY, status)
 
