@@ -864,3 +864,34 @@ class ScreenCaptureService : Service() {
         super.onDestroy()
     }
 }
+class AutoSwipeService : AccessibilityService() {
+
+    companion object {
+        var instance: AutoSwipeService? = null
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+    }
+
+    override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) { }
+
+    override fun onInterrupt() { }
+
+    override fun onDestroy() {
+        instance = null
+        super.onDestroy()
+    }
+
+    fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int) {
+        try {
+            val path = Path()
+            path.moveTo(x1.toFloat(), y1.toFloat())
+            path.lineTo(x2.toFloat(), y2.toFloat())
+            val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.toLong().coerceAtLeast(50))
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            dispatchGesture(gesture, null, null)
+        } catch (_: Exception) { }
+    }
+}
